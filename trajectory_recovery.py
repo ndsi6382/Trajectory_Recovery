@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 
 class TrajectoryRecovery():
@@ -37,20 +38,20 @@ class TrajectoryRecovery():
                 tmp += int(val)
 
 
-    def run_algorithm(self, verbose=False):
-        self.__night__(verbose)
-        self.__day__(verbose)
-        self.__across__(verbose)
+    def run_algorithm(self, check: bool = False):
+        self.__night__()
+        self.__day__()
+        self.__across__()
+        if check:
+            for traj in self.pred:
+                assert all(x != -1 for x in traj)
 
 
-    def __night__(self, verbose=False):
-        if verbose:
-            print("Starting nighttime trajectory recovery process.")
-
+    def __night__(self):
+        pbar = tqdm(total=((self.T // self.D) + (self.T % self.D > 1)),
+                    desc="Recovering Night Trajectories", unit="night", ncols=100)
         cost = np.zeros((self.N, self.N))
-        for i in [x for x in range(self.T) if x % self.D < self.D // 4 and x + 1 < self.T]:
-            if verbose and i % self.D == 0:
-                print(f"Night {i // self.D} processing...")
+        for i in [x for x in range(self.T) if x % self.D < self.D // 4 and x < self.T - 1]:
             for u in range(self.N):
                 for l in range(self.N):
                     loc_i = self.grid[self.pred[u][i]]
@@ -59,19 +60,16 @@ class TrajectoryRecovery():
             row_assn, col_assn = scipy.optimize.linear_sum_assignment(cost, maximize=False)
             for u, l in enumerate(col_assn):
                 self.pred[u][i+1] = self.locs[i+1][l]
-        if verbose:
-            TrajectoryRecovery.preview_matrix(self.pred, 10, self.D // 4)
-            print()
+            if i % self.D == 0:
+                pbar.update()
+        pbar.close()
 
 
-    def __day__(self, verbose=False):
-        if verbose:
-            print("Starting daytime trajectory recovery process.")
-
+    def __day__(self):
+        pbar = tqdm(total=((self.T // self.D) + (self.T % self.D > (self.D // 4 + 1))),
+                    desc="Recovering Day Trajectories", unit="day", ncols=100)
         cost = np.zeros((self.N, self.N))
-        for i in [x for x in range(self.T) if x % self.D >= self.D // 4 and x + 1 < self.T]:
-            if verbose and i % self.D == self.D // 4:
-                print(f"Day {i // self.D} processing...")
+        for i in [x for x in range(self.T) if self.D // 4 <= x % self.D < self.D - 1]:
             for u in range(self.N):
                 for l in range(self.N):
                     q_t = self.grid[self.pred[u][i]]
@@ -82,29 +80,27 @@ class TrajectoryRecovery():
             row_assn, col_assn = scipy.optimize.linear_sum_assignment(cost, maximize=False)
             for u, l in enumerate(col_assn):
                 self.pred[u][i+1] = self.locs[i+1][l]
-        if verbose:
-            TrajectoryRecovery.preview_matrix(self.pred, 10, self.D)
-            print()
+            if i % self.D == self.D // 4:
+                pbar.update()
+        pbar.close()
 
 
-    def __across__(self, verbose=False):
-        if verbose:
-            print("Starting subtrajectory linking process.")
-
+    def __across__(self):
         for i in range(self.N):
             self.pred[i] = [self.pred[i][j:j+self.D] for j in range(0, self.T, self.D)]
-
         days = [[x[i] for x in self.pred] for i in range(math.ceil(self.T / self.D))]
         links = [None for _ in range(len(days)-1)]
+
+        pbar = tqdm(total=len(days)-1, desc="Linking Sub-trajectories", unit="day", ncols=100)
         cost = np.zeros((self.N, self.N))
         for i in range(len(days)-1):
-            if verbose:
-                print(f"Day {i} processing...")
             for a in range(self.N):
                 for b in range(self.N):
                     cost[a][b] = TrajectoryRecovery.gain(days[i][a], days[i+1][b])
             row_assn, col_assn = scipy.optimize.linear_sum_assignment(cost, maximize=False)
             links[i] = col_assn
+            pbar.update()
+        pbar.close()
 
         self.pred = [days[0][i] for i in range(self.N)]
         for i in range(self.N):
@@ -113,61 +109,49 @@ class TrajectoryRecovery():
                 next_row = links[j][curr_row]
                 self.pred[i] = self.pred[i] + days[j+1][next_row]
                 curr_row = next_row
-        if verbose:
-            TrajectoryRecovery.preview_matrix(self.pred, 10, self.T)
-            print()
 
 
-    def evaluate(self, truth_dataset: list[list], verbose=False):
-        if verbose:
-            print("Starting evaluation process.")
+    def evaluate(self, truth_dataset: list[list]):
         self.truth = truth_dataset
-        self.compare = []
         self.result = {
             'accuracy': 0,
             'recovery_error': 0,
             'uniqueness': {
                 'predicted': dict(),
                 'truth': dict(),
-            }
+            },
+            'compare': list(),
         }
+        pbar = tqdm(total=self.N, desc="Evaluating Trajectories", unit="traj.", ncols=100)
 
-        accuracy_matrix = np.zeros((self.N,self.N))
-        error_matrix = np.zeros((self.N,self.N))
-        for i in range(self.N): # predicted trajectories
-            print(f"Evaluating trajectory {i}...")
-            for j in range(self.N): # truth trajectories
+        accuracy_matrix = np.zeros((self.N, self.N))
+        error_matrix = np.zeros((self.N, self.N))
+        for i in range(self.N):
+            for j in range(self.N):
                 error = 0
                 acc = 0
-                for k in range(self.T): # timesteps
+                for k in range(self.T):
                     pred_loc = self.grid[self.pred[i][k]]
                     x = math.dist(pred_loc, self.truth[j][k])
-                    error += x # location error
-                    if x == 0: # accuracy
+                    error += x
+                    if x == 0:
                         acc += 1
                 error_matrix[i][j] = error
                 accuracy_matrix[i][j] = acc / self.T
+            pbar.update()
+        pbar.close()
 
-        #compare[i] = j means the i-th predicted trajectory matches the j-th true trajectory.
-        _, self.compare = scipy.optimize.linear_sum_assignment(error_matrix, maximize=False)
-
-        for i, j in enumerate(self.compare):
+        _, compare = scipy.optimize.linear_sum_assignment(error_matrix, maximize=False)
+        for i, j in enumerate(compare):
             self.result['accuracy'] += accuracy_matrix[i][j] / self.N
             self.result['recovery_error'] += error_matrix[i][j]
-
+            self.result['compare'].append((i,j))
         for i in range(1,6):
             self.result["uniqueness"]["predicted"][i] = TrajectoryRecovery.uniqueness(self.pred, i)
             self.result["uniqueness"]["truth"][i] = TrajectoryRecovery.uniqueness(self.truth, i)
 
-        if verbose:
-            print()
-            for k, v in self.result.items():
-                print(f"{k}: {v}")
-            print(self.compare)
-            print()
 
-
-    def gain(trajectory_1, trajectory_2):
+    def gain(trajectory_1: list[int], trajectory_2: list[int]):
         return TrajectoryRecovery.__entropy__(trajectory_1 + trajectory_2) - ((
                        TrajectoryRecovery.__entropy__(trajectory_1) +
                        TrajectoryRecovery.__entropy__(trajectory_2)
@@ -175,7 +159,7 @@ class TrajectoryRecovery():
                )
 
 
-    def __entropy__(trajectory):
+    def __entropy__(trajectory: list[int]):
         freq = [0 for _ in range(max(trajectory)+1)]
         for x in trajectory:
             freq[x] += 1
@@ -185,36 +169,34 @@ class TrajectoryRecovery():
         return result
 
 
-    def visualise(self, num_timestamps=None):
+    def visualise(self, timestep_range: tuple[int,int] = None):
         if not self.result:
             print("Results have not been evaluated. Call evaluate() to generate results.")
             return
-
         plots = []
-        if not num_timestamps:
-          num_timestamps = self.D
-
-        for i in range(self.N):
-            pred_traj = self.pred[i][:num_timestamps]
+        if not timestep_range:
+            timestep_range = (0, self.D)
+        plt.rcParams['figure.max_open_warning'] = False
+        for (i, j) in self.result['compare']:
+            pred_traj = self.pred[i][timestep_range[0]:timestep_range[1]]
             pred_traj = [self.grid[x] for x in pred_traj]
-            true_traj = self.truth[self.compare[i]][:num_timestamps]
+            true_traj = self.truth[j][timestep_range[0]:timestep_range[1]]
             x1, y1 = zip(*pred_traj)
             x2, y2 = zip(*true_traj)
-
-            fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+            fig, axs = plt.subplots(1, 2, figsize=(8, 4), sharex=True, sharey=True)
             axs[0].plot(x1, y1, color='red')
             axs[0].set_title(f'Predicted Trajectory (No. {i})')
             axs[0].set_xlabel('Longitude')
             axs[0].set_ylabel('Lattitude')
             axs[0].grid()
             axs[1].plot(x2, y2, color='blue')
-            axs[1].set_title(f'True Trajectory (No. {self.compare[i]})')
+            axs[1].set_title(f'True Trajectory (No. {j})')
             axs[1].set_xlabel('Longitude')
             axs[1].set_ylabel('Lattitude')
             axs[1].grid()
             fig.tight_layout()
             plots.append(fig)
-
+        plt.rcParams['figure.max_open_warning'] = True
         return plots
 
 
@@ -230,11 +212,6 @@ class TrajectoryRecovery():
             freq = sorted([(k, v) for k, v in freq.items()], key=lambda x: x[1], reverse=True)
             top_k_locs[u] = set([x[0] for x in freq][:k])
         return len(set(map(frozenset, top_k_locs))) / len(data)
-
-
-    def preview_matrix(matrix, rows, cols):
-        for i in range(rows):
-            print(matrix[i][:cols])
 
 
     def get_predictions(self):
