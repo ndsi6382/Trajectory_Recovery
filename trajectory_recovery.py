@@ -1,8 +1,9 @@
 import math
 import numpy as np
 import pandas as pd
-import scipy
 import matplotlib.pyplot as plt
+from scipy.optimize import linear_sum_assignment
+from geopy.distance import distance as lat_lon_distance
 from tqdm import tqdm
 
 
@@ -15,6 +16,7 @@ class TrajectoryRecovery():
         num_locations: int,
         num_timesteps: int,
         num_intervals_per_day: int
+        cartesian: bool = True
     ):
         self.agg = aggregated_dataset
         self.truth = None
@@ -23,6 +25,11 @@ class TrajectoryRecovery():
         self.M = num_locations
         self.T = num_timesteps
         self.D = num_intervals_per_day
+        if cartesian:
+            self.dist_fn = math.dist
+        else:
+            self.dist_fn = lat_lon_distance
+
         self.locs = [dict() for _ in range(self.T)]
         self.pred = [[-1]*self.T for _ in range(self.N)]
         self.result = None
@@ -56,8 +63,8 @@ class TrajectoryRecovery():
                 for l in range(self.N):
                     loc_i = self.grid[self.pred[u][i]]
                     loc_j = self.grid[self.locs[i+1][l]]
-                    cost[u][l] = math.dist(loc_i, loc_j)
-            row_assn, col_assn = scipy.optimize.linear_sum_assignment(cost, maximize=False)
+                    cost[u][l] = self.dist_fn(loc_i, loc_j)
+            row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
             for u, l in enumerate(col_assn):
                 self.pred[u][i+1] = self.locs[i+1][l]
             if i % self.D == 0:
@@ -76,8 +83,8 @@ class TrajectoryRecovery():
                     q_t1 = self.grid[self.pred[u][i-1]]
                     loc_i = (q_t[0]+(q_t[0]-q_t1[0]), q_t[1]+(q_t[1]-q_t1[1]))
                     loc_j = self.grid[self.locs[i+1][l]]
-                    cost[u][l] = math.dist(loc_i, loc_j)
-            row_assn, col_assn = scipy.optimize.linear_sum_assignment(cost, maximize=False)
+                    cost[u][l] = self.dist_fn(loc_i, loc_j)
+            row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
             for u, l in enumerate(col_assn):
                 self.pred[u][i+1] = self.locs[i+1][l]
             if i % self.D == self.D // 4:
@@ -97,7 +104,7 @@ class TrajectoryRecovery():
             for a in range(self.N):
                 for b in range(self.N):
                     cost[a][b] = TrajectoryRecovery.gain(days[i][a], days[i+1][b])
-            row_assn, col_assn = scipy.optimize.linear_sum_assignment(cost, maximize=False)
+            row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
             links[i] = col_assn
             pbar.update()
         pbar.close()
@@ -132,7 +139,7 @@ class TrajectoryRecovery():
                 acc = 0
                 for k in range(self.T):
                     pred_loc = self.grid[self.pred[i][k]]
-                    x = math.dist(pred_loc, self.truth[j][k])
+                    x = self.dist_fn(pred_loc, self.truth[j][k])
                     error += x
                     if x == 0:
                         acc += 1
@@ -141,7 +148,7 @@ class TrajectoryRecovery():
             pbar.update()
         pbar.close()
 
-        _, compare = scipy.optimize.linear_sum_assignment(error_matrix, maximize=False)
+        _, compare = linear_sum_assignment(error_matrix, maximize=False)
         for i, j in enumerate(compare):
             self.result['accuracy'] += accuracy_matrix[i][j] / self.N
             self.result['recovery_error'] += error_matrix[i][j]
