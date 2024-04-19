@@ -76,7 +76,7 @@ class TrajectoryRecovery():
         pbar = tqdm(total=((self.T // self.D) + (self.T % self.D > (self.D // 4 + 1))),
                     desc="Recovering Day Trajectories", unit="day", ncols=100)
         cost = np.zeros((self.N, self.N))
-        for i in [x for x in range(self.T) if self.D // 4 <= x % self.D < self.D - 1]:
+        for i in [x for x in range(self.T) if self.D // 4 <= x % self.D < self.D - 1 and x < self.T - 1]:
             for u in range(self.N):
                 for l in range(self.N):
                     q_t = self.grid[self.pred[u][i]]
