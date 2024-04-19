@@ -15,7 +15,7 @@ class TrajectoryRecovery():
         num_trajectories: int,
         num_locations: int,
         num_timesteps: int,
-        num_intervals_per_day: int
+        num_intervals_per_day: int,
         cartesian: bool = True
     ):
         self.agg = aggregated_dataset
