@@ -65,7 +65,7 @@ class TrajectoryRecovery():
                     loc_j = self.grid[self.locs[i+1][l]]
                     cost[u][l] = self.dist_fn(loc_i, loc_j)
             row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
-            for u, l in enumerate(col_assn):
+            for u, l in zip(row_assn, col_assn):
                 self.pred[u][i+1] = self.locs[i+1][l]
             if i % self.D == 0:
                 pbar.update()
@@ -85,7 +85,7 @@ class TrajectoryRecovery():
                     loc_j = self.grid[self.locs[i+1][l]]
                     cost[u][l] = self.dist_fn(loc_i, loc_j)
             row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
-            for u, l in enumerate(col_assn):
+            for u, l in zip(row_assn, col_assn):
                 self.pred[u][i+1] = self.locs[i+1][l]
             if i % self.D == self.D // 4:
                 pbar.update()
@@ -148,8 +148,8 @@ class TrajectoryRecovery():
             pbar.update()
         pbar.close()
 
-        _, compare = linear_sum_assignment(error_matrix, maximize=False)
-        for i, j in enumerate(compare):
+        pred_traj, true_traj = linear_sum_assignment(error_matrix, maximize=False)
+        for i, j in zip(pred_traj, true_traj):
             self.result['accuracy'] += accuracy_matrix[i][j] / self.N
             self.result['recovery_error'] += error_matrix[i][j]
             self.result['compare'].append((i,j))
@@ -158,7 +158,7 @@ class TrajectoryRecovery():
             self.result["uniqueness"]["truth"][i] = TrajectoryRecovery.uniqueness(self.truth, i)
 
 
-    def gain(trajectory_1: list[int], trajectory_2: list[int]):
+    def gain(trajectory_1: list, trajectory_2: list):
         return TrajectoryRecovery.__entropy__(trajectory_1 + trajectory_2) - ((
                        TrajectoryRecovery.__entropy__(trajectory_1) +
                        TrajectoryRecovery.__entropy__(trajectory_2)
@@ -166,12 +166,12 @@ class TrajectoryRecovery():
                )
 
 
-    def __entropy__(trajectory: list[int]):
-        freq = [0 for _ in range(max(trajectory)+1)]
+    def __entropy__(trajectory: list):
+        freq = {x:0 for x in trajectory}
         for x in trajectory:
             freq[x] += 1
         result = 0
-        for f in [x for x in freq if x > 0]:
+        for f in [v for k, v in freq.items() if v > 0]:
             result -= (f/len(trajectory))*math.log2(f/len(trajectory))
         return result
 
