@@ -15,7 +15,7 @@ class TrajectoryRecovery():
         num_trajectories: int,
         num_locations: int,
         num_timesteps: int,
-        num_intervals_per_day: int,
+        num_timesteps_per_day: int,
         cartesian: bool = True
     ):
         self.agg = aggregated_dataset
@@ -24,7 +24,7 @@ class TrajectoryRecovery():
         self.N = num_trajectories
         self.M = num_locations
         self.T = num_timesteps
-        self.D = num_intervals_per_day
+        self.D = num_timesteps_per_day
         if cartesian:
             self.dist_fn = math.dist
         else:
@@ -207,7 +207,7 @@ class TrajectoryRecovery():
         return plots
 
 
-    def uniqueness(data, k):
+    def uniqueness(data: list[list], k: int):
         top_k_locs = [set() for _ in range(len(data))]
         for u in range(len(data)):
             freq = dict()
