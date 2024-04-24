@@ -1,6 +1,7 @@
 # Trajectory Recovery
 
-This repository contains an implementation of the trajectory recovery algorithm proposed by Xu et al. 
+This repository contains an implementation of the trajectory recovery algorithm proposed by Xu et al. in
+"Trajectory Recovery From Ash: User Privacy Is NOT Preserved in Aggregated Mobility Data" (2017).
 It is supplied as a Python module and as a Jupyter Notebook with detailed step-by-step explanations.
 
 We evaluate the algorithm on two open-source datasets: GeoLife and Porto Taxi.
@@ -13,5 +14,5 @@ We evaluate the algorithm on two open-source datasets: GeoLife and Porto Taxi.
 
 References:
 - F. Xu, Z. Tu, Y. Li, P. Zhang, X. Fu, and D. Jin, “Trajectory recovery from ash: User privacy is not preserved in aggregated mobility data,” in Proceedings of the 26th International Conference on World Wide Web, ser. WWW ’17. International World Wide Web Conferences Steering Committee, Apr. 2017. [Online]. Available: http://dx.doi.org/10.1145/3038912.3052620
--  Y. Zheng, H. Fu, X. Xie, W.-Y. Ma, and Q. Li, Geolife GPS trajectory dataset - User Guide, geolife gps trajectories 1.1 ed., July 2011. [Online]. Available: https://www.microsoft.com/en-us/research/publication/geolife-gps-trajectory-dataset-user-guide/
+- Y. Zheng, H. Fu, X. Xie, W.-Y. Ma, and Q. Li, Geolife GPS trajectory dataset - User Guide, geolife gps trajectories 1.1 ed., July 2011. [Online]. Available: https://www.microsoft.com/en-us/research/publication/geolife-gps-trajectory-dataset-user-guide/
 - W. K. Meghan O’Connell, moreiraMatias, “Ecml/pkdd 15: Taxi trajectory prediction (i),” 2015. [Online]. Available: https://kaggle.com/competitions/pkdd-15-predict-taxi-service-trajectory-i
