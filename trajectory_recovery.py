@@ -240,8 +240,7 @@ class TrajectoryRecoveryA():
 class TrajectoryRecoveryB(TrajectoryRecoveryA):
     """
     Notes:
-
-    To use the stages of the original paper, the correct steps for night/day are:
+    To use the 'stages' of the original paper, the correct steps for night/day are:
         self.__night__([x for x in range(len(self.curr_day[0])-1) if x < self.D // 4], d) # midnight to 6am
         self.__day__([x for x in range(len(self.curr_day[0])-1) if x >= self.D // 4], d) # 6am onwards
 
@@ -308,36 +307,25 @@ class TrajectoryRecoveryB(TrajectoryRecoveryA):
                 self.curr_day = [[-1] * (self.T - d*self.D) for _ in range(self.N)]
             else:
                 self.curr_day = [[-1]*self.D for _ in range(self.N)]
-            fill_step = 0
-            row = self.agg[fill_step]
+            row = self.agg[0]
             tmp = 0
             for j, val in enumerate(row):
                 for k in range(val):
-                    self.curr_day[tmp+k][fill_step] = j
+                    self.curr_day[tmp+k][0] = j
                 tmp += val
             self.__night__([x for x in range(len(self.curr_day[0])-1) if x == 0], d) # midnight only
             self.__day__([x for x in range(len(self.curr_day[0])-1) if x > 0], d)
-
-            if d == 0: # Link
+            if d == 0:
                 self.pred = copy.deepcopy(self.curr_day)
             else:
-                cost = np.zeros((self.N, self.N))
-                for a in range(self.N): # pred
-                    for b in range(self.N): # curr
-                        min_cost = float('inf')
-                        for i in range(lookback):
-                            min_cost = min(TrajectoryRecovery.gain(self.pred[a][max(0,d-i-1)*self.D:max(1,d-i)*self.D], self.curr_day[b]), min_cost)
-                        cost[a][b] = min_cost # cost that pred[a] matches curr_day[b]
-                row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
-                for p, c in zip(row_assn, col_assn):
-                    self.pred[p] += self.curr_day[c]
-
+                self.__across__(d, lookback)
             for u in range(self.N): # Update Bigrams from self.pred
                 for i in range(max(1, d*self.D), min((d+1)*self.D, self.T)):
                     self.bigrams[self.pred[u][i-1]][self.pred[u][i]] += 1
                     self.bigrams_sums[self.pred[u][i-1]] = max(self.bigrams_sums[self.pred[u][i-1]], self.bigrams[self.pred[u][i-1]][self.pred[u][i]])
             pbar.update()
         pbar.close()
+        del self.curr_day
 
 
     def __night__(self, steps, day):
@@ -372,8 +360,18 @@ class TrajectoryRecoveryB(TrajectoryRecoveryA):
             for u, l in zip(row_assn, col_assn):
                 self.curr_day[u][i+1] = self.locs[day*self.D + i+1][l]
 
-    def __across__(self):
-        pass
+
+    def __across__(self, day, lookback):
+        cost = np.zeros((self.N, self.N))
+        for a in range(self.N): # pred
+            for b in range(self.N): # curr
+                min_cost = float('inf')
+                for i in range(lookback):
+                    min_cost = min(TrajectoryRecovery.gain(self.pred[a][max(0,day-i-1)*self.D:max(1,day-i)*self.D], self.curr_day[b]), min_cost)
+                cost[a][b] = min_cost # cost that pred[a] matches curr_day[b]
+        row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
+        for p, c in zip(row_assn, col_assn):
+            self.pred[p] += self.curr_day[c]
 
 
 TrajectoryRecovery = TrajectoryRecoveryB # Alias the enhanced version
