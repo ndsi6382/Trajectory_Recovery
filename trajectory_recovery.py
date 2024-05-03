@@ -5,20 +5,25 @@ import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment
 from geopy.distance import distance as lat_lon_distance
 from tqdm import tqdm
+import copy
+from typing import *
 
 
-class TrajectoryRecovery():
+class TrajectoryRecoveryA():
     def __init__(
         self,
-        aggregated_dataset: pd.DataFrame,
-        grid: dict,
+        aggregated_dataset: Union[pd.DataFrame, np.ndarray],
+        grid: Union[dict, list, np.array],
         num_trajectories: int,
         num_locations: int,
         num_timesteps: int,
         num_timesteps_per_day: int,
         cartesian: bool = True
     ):
-        self.agg = aggregated_dataset
+        if type(aggregated_dataset == pd.DataFrame):
+            self.agg = aggregated_dataset.values
+        else:
+            self.agg = aggregated_dataset
         self.truth = None
         self.grid = grid
         self.N = num_trajectories
@@ -35,23 +40,20 @@ class TrajectoryRecovery():
         self.result = None
 
         for i in range(self.T):
-            row = aggregated_dataset.iloc[[i]].values[0]
+            row = self.agg[i]
             tmp = 0
             for j, val in enumerate(row):
-                for k in range(int(val)):
+                for k in range(val):
                     self.locs[i][tmp+k] = j
                     if i % self.D == 0:
                         self.pred[tmp+k][i] = j
-                tmp += int(val)
+                tmp += val
 
 
-    def run_algorithm(self, check: bool = False):
+    def run_algorithm(self):
         self.__night__()
         self.__day__()
         self.__across__()
-        if check:
-            for traj in self.pred:
-                assert all(x != -1 for x in traj)
 
 
     def __night__(self):
@@ -233,3 +235,145 @@ class TrajectoryRecovery():
             print("Results have not been evaluated. Call evaluate() to generate results.")
         else:
             return self.result
+
+
+class TrajectoryRecoveryB(TrajectoryRecoveryA):
+    """
+    Notes:
+
+    To use the stages of the original paper, the correct steps for night/day are:
+        self.__night__([x for x in range(len(self.curr_day[0])-1) if x < self.D // 4], d) # midnight to 6am
+        self.__day__([x for x in range(len(self.curr_day[0])-1) if x >= self.D // 4], d) # 6am onwards
+
+    The inner block in the __day__() function may alternatively written as:
+        for l in range(self.N):
+            q_t = self.grid[self.curr_day[u][i]]
+            q_t1 = self.grid[self.curr_day[u][i-1]]
+            loc_i = (q_t[0]+(q_t[0]-q_t1[0]), q_t[1]+(q_t[1]-q_t1[1])) # estimated location
+            loc_j = self.grid[self.locs[day*self.D + i+1][l]] # candidate location
+            cost[u][l] = self.dist_fn(loc_i, loc_j)
+            for h in histories:
+                cost[u][l] = min(cost[u][l], self.dist_fn(self.grid[h], loc_j))
+    """
+
+    def __init__(
+        self,
+        aggregated_dataset: Union[pd.DataFrame, np.ndarray],
+        grid: Union[dict, list, np.array],
+        num_trajectories: int,
+        num_locations: int,
+        num_timesteps: int,
+        num_timesteps_per_day: int,
+        cartesian: bool = True
+    ):
+        if type(aggregated_dataset == pd.DataFrame):
+            self.agg = aggregated_dataset.values
+        else:
+            self.agg = aggregated_dataset
+        self.truth = None
+        self.grid = grid
+        self.N = num_trajectories
+        self.M = num_locations
+        self.T = num_timesteps
+        self.D = num_timesteps_per_day
+        if cartesian:
+            self.dist_fn = math.dist
+        else:
+            self.dist_fn = lat_lon_distance
+        self.locs = [dict() for _ in range(self.T)] # locs[time][col] = loc_id
+        self.revlocs = [dict() for _ in range(self.T)] # revlocs[time][loc_id] = list_of_columns
+        self.pred = [[] for _ in range(self.N)]
+        self.bigrams = np.zeros((self.M, self.M)) # locations must be stored by ID, not tuple.
+        self.bigrams_sums = np.zeros(self.M) # tracks the max. frequency of ANY destination, for each source location
+        self.result = None
+
+        for i in range(self.T):
+            row = self.agg[i]
+            tmp = 0
+            for j, val in enumerate(row):
+                for k in range(val):
+                    self.locs[i][tmp+k] = j
+                    if j not in self.revlocs[i].keys():
+                        self.revlocs[i][j] = [tmp+k]
+                    else:
+                        self.revlocs[i][j].append(tmp+k)
+                tmp += val
+
+
+    def run_algorithm(self, lookback: int = 1):
+        lookback = max(1, lookback)
+        pbar = tqdm(total=math.ceil(self.T / self.D), desc="Recovering Trajectories", unit="day", ncols=100)
+        for d in range(math.ceil(self.T / self.D)): # day
+            if (d+1)*self.D > self.T:
+                self.curr_day = [[-1] * (self.T - d*self.D) for _ in range(self.N)]
+            else:
+                self.curr_day = [[-1]*self.D for _ in range(self.N)]
+            fill_step = 0
+            row = self.agg[fill_step]
+            tmp = 0
+            for j, val in enumerate(row):
+                for k in range(val):
+                    self.curr_day[tmp+k][fill_step] = j
+                tmp += val
+            self.__night__([x for x in range(len(self.curr_day[0])-1) if x == 0], d) # midnight only
+            self.__day__([x for x in range(len(self.curr_day[0])-1) if x > 0], d)
+
+            if d == 0: # Link
+                self.pred = copy.deepcopy(self.curr_day)
+            else:
+                cost = np.zeros((self.N, self.N))
+                for a in range(self.N): # pred
+                    for b in range(self.N): # curr
+                        min_cost = float('inf')
+                        for i in range(lookback):
+                            min_cost = min(TrajectoryRecovery.gain(self.pred[a][max(0,d-i-1)*self.D:max(1,d-i)*self.D], self.curr_day[b]), min_cost)
+                        cost[a][b] = min_cost # cost that pred[a] matches curr_day[b]
+                row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
+                for p, c in zip(row_assn, col_assn):
+                    self.pred[p] += self.curr_day[c]
+
+            for u in range(self.N): # Update Bigrams from self.pred
+                for i in range(max(1, d*self.D), min((d+1)*self.D, self.T)):
+                    self.bigrams[self.pred[u][i-1]][self.pred[u][i]] += 1
+                    self.bigrams_sums[self.pred[u][i-1]] = max(self.bigrams_sums[self.pred[u][i-1]], self.bigrams[self.pred[u][i-1]][self.pred[u][i]])
+            pbar.update()
+        pbar.close()
+
+
+    def __night__(self, steps, day):
+        cost = np.zeros((self.N, self.N))
+        for i in steps:
+            for u in range(self.N):
+                for l in range(self.N):
+                    loc_i = self.grid[self.curr_day[u][i]]
+                    loc_j = self.grid[self.locs[day*self.D + i+1][l]]
+                    cost[u][l] = self.dist_fn(loc_i, loc_j)
+            row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
+            for u, l in zip(row_assn, col_assn):
+                self.curr_day[u][i+1] = self.locs[day*self.D + i+1][l]
+
+
+    def __day__(self, steps, day):
+        cost = np.zeros((self.N, self.N))
+        for i in steps:
+            for u in range(self.N):
+                histories = [j for j, x in enumerate(self.bigrams[self.curr_day[u][i]]) if x == self.bigrams_sums[self.curr_day[u][i]] and x > 0]
+                for loc_id, cols in self.revlocs[day*self.D + i+1].items():
+                    q_t = self.grid[self.curr_day[u][i]]
+                    q_t1 = self.grid[self.curr_day[u][i-1]]
+                    loc_i = (q_t[0]+(q_t[0]-q_t1[0]), q_t[1]+(q_t[1]-q_t1[1])) # estimated location
+                    loc_j = self.grid[loc_id] # candidate location
+                    loc_cost = self.dist_fn(loc_i, loc_j)
+                    for h in histories:
+                        loc_cost = min(loc_cost, self.dist_fn(self.grid[h], loc_j))
+                    for c in cols:
+                        cost[u][c] = loc_cost
+            row_assn, col_assn = linear_sum_assignment(cost, maximize=False)
+            for u, l in zip(row_assn, col_assn):
+                self.curr_day[u][i+1] = self.locs[day*self.D + i+1][l]
+
+    def __across__(self):
+        pass
+
+
+TrajectoryRecovery = TrajectoryRecoveryB # Alias the enhanced version
