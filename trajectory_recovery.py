@@ -13,7 +13,7 @@ class TrajectoryRecoveryA():
     def __init__(
         self,
         aggregated_dataset: Union[pd.DataFrame, np.ndarray],
-        grid: Union[dict, list, np.array],
+        grid: Union[dict, list, np.ndarray],
         num_trajectories: int,
         num_locations: int,
         num_timesteps: int,
@@ -120,7 +120,7 @@ class TrajectoryRecoveryA():
                 curr_row = next_row
 
 
-    def evaluate(self, truth_dataset: list[list]):
+    def evaluate(self, truth_dataset: list[list[tuple]]):
         self.truth = truth_dataset
         self.result = {
             'accuracy': 0,
@@ -180,8 +180,7 @@ class TrajectoryRecoveryA():
 
     def visualise(self, timestep_range: tuple[int,int] = None):
         if not self.result:
-            print("Results have not been evaluated. Call evaluate() to generate results.")
-            return
+            raise RuntimeError("Results have not been evaluated. Call evaluate() to generate results.")
         plots = []
         if not timestep_range:
             timestep_range = (0, self.D)
@@ -223,16 +222,21 @@ class TrajectoryRecoveryA():
         return len(set(map(frozenset, top_k_locs))) / len(data)
 
 
-    def get_predictions(self):
+    def get_predictions(self, location_type: Literal['coordinate', 'id'] = 'coordinate'):
         if not self.pred:
-            print("Algorithm has not been run. Call run_algorithm() to generate predictions.")
+            raise RuntimeError("Algorithm has not been run. Call run_algorithm() to generate predictions.")
         else:
-            return self.pred
+            if location_type == "coordinate":
+                return [[self.grid[l] for l in u] for u in self.pred] #return self.pred
+            elif location_type == "id":
+                return self.pred
+            else:
+                raise ValueError("Invalid location_type given. Must be 'coordinate' or 'id'.")
 
 
     def get_results(self):
         if not self.result:
-            print("Results have not been evaluated. Call evaluate() to generate results.")
+            raise RuntimeError("Results have not been evaluated. Call evaluate() to generate results.")
         else:
             return self.result
 
@@ -258,7 +262,7 @@ class TrajectoryRecoveryB(TrajectoryRecoveryA):
     def __init__(
         self,
         aggregated_dataset: Union[pd.DataFrame, np.ndarray],
-        grid: Union[dict, list, np.array],
+        grid: Union[dict, list, np.ndarray],
         num_trajectories: int,
         num_locations: int,
         num_timesteps: int,
@@ -314,7 +318,7 @@ class TrajectoryRecoveryB(TrajectoryRecoveryA):
                     self.curr_day[tmp+k][0] = j
                 tmp += val
             self.__night__([x for x in range(len(self.curr_day[0])-1) if x == 0], d) # midnight only
-            self.__day__([x for x in range(len(self.curr_day[0])-1) if x > 0], d)
+            self.__day__([x for x in range(len(self.curr_day[0])-1) if x > 0], d) # all timesteps except the first
             if d == 0:
                 self.pred = copy.deepcopy(self.curr_day)
             else:
