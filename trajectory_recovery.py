@@ -7,7 +7,7 @@ from geopy.distance import distance as lat_lon_distance
 from tqdm import tqdm
 import copy
 from typing import *
-
+from Levenshtein import distance as lev
 
 class TrajectoryRecoveryA():
     def __init__(
@@ -130,6 +130,7 @@ class TrajectoryRecoveryA():
                 'truth': dict(),
             },
             'compare': list(),
+            'levenshtein': 0,
         }
         pbar = tqdm(total=self.N, desc="Evaluating Trajectories", unit="traj.", ncols=100)
 
@@ -155,6 +156,7 @@ class TrajectoryRecoveryA():
             self.result['accuracy'] += accuracy_matrix[i][j] / self.N
             self.result['recovery_error'] += error_matrix[i][j]
             self.result['compare'].append((i,j))
+            self.result['levenshtein'] += (lev([self.grid[x] for x in self.pred[i]], self.truth[j]) / self.T) / self.N
         for i in range(1,6):
             self.result["uniqueness"]["predicted"][i] = TrajectoryRecovery.uniqueness(self.pred, i)
             self.result["uniqueness"]["truth"][i] = TrajectoryRecovery.uniqueness(self.truth, i)
@@ -195,13 +197,14 @@ class TrajectoryRecoveryA():
             axs[0].plot(x1, y1, color='red')
             axs[0].set_title(f'Predicted Trajectory (No. {i})')
             axs[0].set_xlabel('Longitude')
-            axs[0].set_ylabel('Lattitude')
+            axs[0].set_ylabel('Latitude')
             axs[0].grid()
             axs[1].plot(x2, y2, color='blue')
             axs[1].set_title(f'True Trajectory (No. {j})')
             axs[1].set_xlabel('Longitude')
-            axs[1].set_ylabel('Lattitude')
             axs[1].grid()
+            axs[0].tick_params(labelbottom=False, labelleft=False)
+            axs[1].tick_params(labelbottom=False, labelleft=False)
             fig.tight_layout()
             plots.append(fig)
         plt.rcParams['figure.max_open_warning'] = True
